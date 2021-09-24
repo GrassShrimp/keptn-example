@@ -1,0 +1,5 @@
+mongodb-kubernetes-operator
+istio-1.11.2
+configs
+.terraform
+terraform.tfstate*

@@ -4,7 +4,7 @@ resource "null_resource" "download_istio" {
   }
   provisioner "local-exec" {
     when    = destroy
-    command = "rm -r ${path.module}/istio-1.11.2"
+    command = "rm -r ${path.root}/istio-1.11.2"
   }
   depends_on = [
     helm_release.metallb
@@ -26,7 +26,7 @@ resource "kubernetes_namespace" "istio-operator" {
 }
 resource "helm_release" "istio-operator" {
   name            = "istio-operator"
-  repository      = "${path.module}/istio-1.11.2/manifests/charts"
+  repository      = "${path.root}/istio-1.11.2/manifests/charts"
   chart           = "istio-operator"
   version         = "1.11.2"
   namespace       = kubernetes_namespace.istio-operator.metadata[0].name
@@ -81,6 +81,11 @@ resource "local_file" "istio-profile" {
               port: 15443
               protocol: TCP
               targetPort: 15443
+            - name: mongo
+              nodePort: 31832
+              port: 27017
+              protocol: TCP
+              targetPort: 27017
           nodeSelector:
             ingress-ready: "true"
           tolerations:
@@ -99,6 +104,9 @@ resource "local_file" "istio-profile" {
             effect: "NoSchedule"
   EOF
   filename = "${path.root}/configs/istio-profile.yaml"
+  depends_on = [
+    helm_release.istio-operator
+  ]
 }
 resource "null_resource" "installing-istio" {
   triggers = {
