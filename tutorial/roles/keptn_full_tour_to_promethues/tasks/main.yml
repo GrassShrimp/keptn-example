@@ -1,0 +1,160 @@
+---
+# tasks file for roles/keptn_full_tour_to_promethues
+- name: Configure Istio
+  block:
+  - command: kubectl -n istio-system get service istio-ingressgateway --output jsonpath='{.status.loadBalancer.ingress[0].ip}'
+    register: ip
+  - name: created an Ingress based on the following manifest
+    community.kubernetes.k8s:
+      state: present
+      definition:
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          annotations:
+            kubernetes.io/ingress.class: istio
+          name: api-keptn-ingress
+          namespace: keptn
+        spec:
+          rules:
+          - host: "{{ ip.stdout }}.nip.io"
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: api-gateway-nginx
+                    port: 
+                      number: 80
+  - name: created a gateway resource for you so that the onboarded services are also available publicly
+    community.kubernetes.k8s:
+      state: present
+      definition:
+        apiVersion: networking.istio.io/v1alpha3
+        kind: Gateway
+        metadata:
+          name: public-gateway
+          namespace: istio-system
+        spec:
+          selector:
+            istio: ingressgateway
+          servers:
+          - port:
+              name: http
+              number: 80
+              protocol: HTTP
+            hosts:
+            - '*'
+- name: ready to next step - Create your first project ?
+  pause:
+- name: Create your first project
+  block:
+  - name: let's create the project using the keptn create project command
+    command: keptn create project sockshop --shipyard=./shipyard.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+- name: ready to next step - Create first microservice ?
+  pause:
+- name: Create first microservice
+  block:
+  - name: Create the carts service using the keptn create service and keptn add-resourcecommands
+    command: "{{ item }}"
+    with_items:
+    - keptn create service carts --project=sockshop
+    - keptn add-resource --project=sockshop --service=carts --all-stages --resource=./carts.tgz --resourceUri=helm/carts.tgz
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+  - name: Functional tests for dev stage
+    command: keptn add-resource --project=sockshop --stage=dev --service=carts --resource=jmeter/basiccheck.jmx --resourceUri=jmeter/basiccheck.jmx
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+  - name: Performance tests for staging stage
+    command: keptn add-resource --project=sockshop --stage=staging --service=carts --resource=jmeter/load.jmx --resourceUri=jmeter/load.jmx
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+  - name: Create the carts-db service using the keptn create service and keptn add-resourcecommands
+    command: "{{ item }}"
+    with_items:
+    - keptn create service carts-db --project=sockshop
+    - keptn add-resource --project=sockshop --service=carts-db --all-stages --resource=./carts-db.tgz --resourceUri=helm/carts-db.tgz
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+- name: ready to next step - Deploy first build with Keptn ?
+  pause:
+- name: Deploy first build with Keptn
+  block:
+  - name: Deploy the carts-db service by executing the keptn trigger delivery command
+    command: keptn trigger delivery --project=sockshop --service=carts-db --image=docker.io/mongo --tag=4.2.2 --sequence=delivery-direct
+  - name: Deploy the carts service by specifying the built artifact, which is stored on DockerHub and tagged with version 0.12.1
+    command: keptn trigger delivery --project=sockshop --service=carts --image=docker.io/keptnexamples/carts --tag=0.12.1
+- name: ready to next step - Generate traffic ?
+  pause:
+- name: Generate traffic
+  block:
+  - name: let us deploy a pod that will generate some traffic for all three stages of our demo environment
+    command: kubectl apply -f deploy/cartsloadgen-base.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/load-generation/cartsloadgen"
+- name: ready to next step - Setup Prometheus Monitoring ?
+  pause:
+- name: Setup Prometheus Monitoring
+  block:
+  - name: Execute the following command to install Prometheus and set up the rules for the Prometheus Alerting Manager
+    command: keptn configure monitoring prometheus --project=sockshop --service=carts
+  - name: add the configuration for our SLIs in terms of an SLI file that maps the name of an indicator to a PromQL statement how to actually query it
+    command: keptn add-resource --project=sockshop --stage=staging --service=carts --resource=sli-config-prometheus-bg.yaml --resourceUri=prometheus/sli.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+- name: ready to next step - Set up the quality gate ?
+  pause:
+- name: Set up the quality gate
+  block:
+  - name: To activate the quality gates for the carts service upload the slo-quality-gates.yaml file using the add-resource command
+    command: keptn add-resource --project=sockshop --stage=staging --service=carts --resource=slo-quality-gates.yaml --resourceUri=slo.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+- name: ready to next step - Deploy a slow build version ?
+  pause:
+- name: Deploy a slow build version
+  block:
+  - name: Use the Keptn CLI to deploy a version of the carts service, which contains an artificial slowdown of 1 second in each request.
+    command: keptn trigger delivery --project=sockshop --service=carts --image=docker.io/keptnexamples/carts --tag=0.12.2
+- name: ready to next step - Deploy a regular carts version ?
+  pause:
+- name: Deploy a regular carts version
+  block:
+  - name: Use the Keptn CLI to send a new version of the carts artifact, which does not contain any slowdown
+    command: keptn trigger delivery --project=sockshop --service=carts --image=docker.io/keptnexamples/carts --tag=0.12.3
+- name: ready to next step - Enable Self-Healing?
+  pause:
+- name: Enable Self-Healing
+  block:
+  - name: For this usecase, we have prepared another version of the SLI file. Add it with the following command
+    command: keptn add-resource --project=sockshop --stage=production --service=carts --resource=sli-config-prometheus-selfhealing.yaml --resourceUri=prometheus/sli.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+  - name: Add the prepared SLO file for self-healing to the production stage using the Keptn CLIs add-resource command
+    command: keptn add-resource --project=sockshop --stage=production --service=carts --resource=slo-self-healing-prometheus.yaml --resourceUri=slo.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+  - name: Configure Prometheus with the Keptn CLI 
+    command: keptn configure monitoring prometheus --project=sockshop --service=carts
+  - name: Configure remediation actions for up-scaling based on Prometheus alerts
+    command: keptn add-resource --project=sockshop --stage=production --service=carts --resource=remediation.yaml --resourceUri=remediation.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/onboarding-carts"
+- name: ready to next step - Generate load for the service ?
+  pause:
+- name: Generate load for the service
+  block:
+  - name: Start the load generation script
+    command: kubectl apply -f cartsloadgen-faulty.yaml
+    args: 
+      chdir: "{{ playbook_dir }}/../examples/load-generation/cartsloadgen/deploy"
+- name: ready to next step - Watch self-healing in action ?
+  pause:
+- name: Watch self-healing in action
+  block:
+  - name: Instead of waiting 15 minutes for the Alert Manager to fire an alert, you can manually send the trigger of a remediation sequence by executing the following commands
+    command: keptn send event -f {{ role_path }}/files/remediation_trigger.json

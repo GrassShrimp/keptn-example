@@ -30,6 +30,9 @@ resource "helm_release" "keptn" {
       enabled: true
   EOF
   ]
+  provisioner "local-exec" {
+    command = "kubectl patch configmap/ingress-config -n ${self.namespace} --type merge -p '{\"data\":{\"ingress_hostname_suffix\":\"${module.kind-istio-metallb.ingress_ip_address}.nip.io\"}}'"
+  }
   depends_on = [
     module.kind-istio-metallb
   ]
@@ -65,7 +68,7 @@ resource "local_file" "keptn-ingress" {
       - destination:
           port:
             number: 80
-          host: api-gateway-nginx.keptn.svc.cluster.local
+          host: api-gateway-nginx.${helm_release.keptn.namespace}.svc.cluster.local
   EOF
   filename = "${path.root}/configs/keptn-ingress.yaml"
   provisioner "local-exec" {

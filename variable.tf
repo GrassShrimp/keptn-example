@@ -10,3 +10,6 @@ variable "METALLB_VERSION" {
 variable "KEPTN_VERSION" {
   type = string
 }
+variable "PROMETHEUS_VERSION" {
+  type = string
+}

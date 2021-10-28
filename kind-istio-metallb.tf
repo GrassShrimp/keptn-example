@@ -23,6 +23,7 @@ module "kind-istio-metallb" {
         protocol: TCP
     - role: worker
     - role: worker
+    - role: worker
   EOF
   ISTIO_PROFILE   = <<-EOF
     apiVersion: install.istio.io/v1alpha1

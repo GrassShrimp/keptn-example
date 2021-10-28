@@ -1,0 +1,6 @@
+- name: keptn_tutorial
+  hosts: localhost
+  roles:
+  - role: keptn_full_tour_to_promethues
+    tags:
+    - keptn_full_tour_to_promethues
